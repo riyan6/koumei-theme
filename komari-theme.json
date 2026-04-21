@@ -1,0 +1,9 @@
+{
+  "name": "Koumei Theme",
+  "short": "Koumei",
+  "description": "A modern Komari monitor theme built with Vue 3, Tailwind CSS and shadcn-vue.",
+  "version": "0.1.0",
+  "author": "riyan6",
+  "url": "https://github.com/riyan6/koumei-theme.git",
+  "preview": ""
+}
