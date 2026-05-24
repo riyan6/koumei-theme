@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { Minimize2 } from 'lucide-vue-next'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
@@ -10,22 +10,21 @@ import type { NodeWithStatus } from '@/types/node'
 
 const props = defineProps<{
   nodes: NodeWithStatus[]
+  activeNodeUuid?: string | null
 }>()
 
-const expandedNodeUuid = ref<string | null>(null)
+const emit = defineEmits<{
+  (event: 'close-node'): void
+  (event: 'open-node', uuid: string): void
+}>()
 
-// 中文说明：节点列表变化时，若当前展开节点已经不在过滤结果内，则自动收起详情视图。
+// 中文说明：当前展开节点完全交给地址状态控制，这样刷新后也能直接恢复详情页。
 const expandedNode = computed<NodeWithStatus | null>(() => {
-  if (!expandedNodeUuid.value) {
+  if (!props.activeNodeUuid) {
     return null
   }
 
-  const matchedNode = props.nodes.find(item => item.node.uuid === expandedNodeUuid.value) ?? null
-  if (!matchedNode) {
-    expandedNodeUuid.value = null
-  }
-
-  return matchedNode
+  return props.nodes.find(item => item.node.uuid === props.activeNodeUuid) ?? null
 })
 
 // 中文说明：统一限制进度条百分比范围，避免接口异常时撑破布局。
@@ -100,12 +99,12 @@ function progressClass(value: number): string {
 
 // 中文说明：点击卡片时切换到单卡详情模式，让首页像展开了一个二级页面。
 function expandNode(uuid: string): void {
-  expandedNodeUuid.value = uuid
+  emit('open-node', uuid)
 }
 
 // 中文说明：点击缩小按钮后恢复原来的网格布局。
 function collapseNode(): void {
-  expandedNodeUuid.value = null
+  emit('close-node')
 }
 
 // 中文说明：将标签数据做成可复用的计算结果，减少模板内重复执行函数。

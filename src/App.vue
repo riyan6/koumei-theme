@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted, watch } from 'vue'
 import { Check, ChevronDown } from 'lucide-vue-next'
 import NodeGrid from '@/components/NodeGrid.vue'
+import { useInstanceRoute } from '@/composables/useInstanceRoute'
 import { useThemeMode, type ThemeMode } from '@/composables/useThemeMode'
 import { useNodes } from '@/composables/useNodes'
 import { formatBytes, formatSpeed } from '@/lib/utils'
@@ -15,10 +16,12 @@ const themeOptions: Array<{ mode: ThemeMode; label: string }> = [
 
 // 中文说明：全局主题切换统一由 composable 托管，页面层只负责渲染按钮和响应交互。
 const { themeMode, setThemeMode } = useThemeMode()
+const { activeNodeUuid, goToHome, goToNode } = useInstanceRoute()
 
 // 中文说明：首页中部直接复用现有节点数据结构，先实现分组切换和基础卡片展示。
 const {
   groups,
+  nodesWithStatus,
   selectedGroup,
   filteredNodes,
   onlineCount,
@@ -30,6 +33,23 @@ const {
   disposeRealtime,
   setGroup,
 } = useNodes()
+
+// 中文说明：列表页保持分组过滤，详情页则直接基于全量节点查找，避免刷新后因过滤条件找不到节点。
+const displayNodes = computed(() =>
+  activeNodeUuid.value ? nodesWithStatus.value : filteredNodes.value,
+)
+
+watch([activeNodeUuid, nodesWithStatus], ([currentUuid, currentNodes]) => {
+  // 中文说明：若地址里的详情 UUID 已不存在，并且节点数据已经加载完成，则自动回退到列表页。
+  if (!currentUuid || currentNodes.length === 0) {
+    return
+  }
+
+  const matchedNode = currentNodes.some(item => item.node.uuid === currentUuid)
+  if (!matchedNode) {
+    goToHome()
+  }
+})
 
 onMounted(() => {
   // 中文说明：页面加载时初始化节点数据，接口失败时会自动回退到 mock 数据。
@@ -50,8 +70,9 @@ onUnmounted(() => {
       <div class="site-container">
         <div class="flex h-[82px] flex-wrap items-center justify-between gap-4">
           <a
-            href="#"
+            href="/"
             class="inline-flex items-center gap-3 font-heading-en text-h3 text-foreground transition-opacity duration-200 hover:opacity-70"
+            @click.prevent="goToHome"
           >
             <!-- 中文说明：导航品牌位优先使用 public 下的 logo.svg，和标题文本一起作为统一入口。 -->
             <img
@@ -128,57 +149,67 @@ onUnmounted(() => {
     <main class="site-container pt-[82px]">
       <!-- 中文说明：主体区域先实现分组切换和服务器卡片，后续再继续丰富节点信息。 -->
       <section class="flex min-h-[calc(100vh-82px)] flex-col gap-8 py-10">
-        <div class="flex flex-wrap items-center justify-between gap-4">
-          <!-- 中文说明：分组切换改成整块 tabs 结构，选中和未选中态按主题色统一处理。 -->
+        <Transition name="toolbar-switch">
           <div
-            class="inline-flex self-start flex-wrap items-center gap-1 rounded-[1.1rem] bg-[var(--theme-control-surface)] p-1"
-            role="tablist"
-            aria-label="节点分组"
+            v-if="!activeNodeUuid"
+            class="flex flex-wrap items-center justify-between gap-4"
           >
-            <button
-              type="button"
-              role="tab"
-              :aria-selected="selectedGroup === ''"
-              :class="[
-                'font-ui-mixed text-ui rounded-[0.85rem] px-5 py-2 text-center whitespace-nowrap transition-all duration-200',
-                selectedGroup === ''
-                  ? 'bg-[var(--theme-control-active-surface)] text-[var(--theme-text-primary)] shadow-[var(--theme-control-active-shadow)]'
-                  : 'bg-transparent text-[var(--theme-text-secondary)] hover:text-[var(--theme-text-primary)]',
-              ]"
-              @click="setGroup('')"
+            <!-- 中文说明：分组切换改成整块 tabs 结构，选中和未选中态按主题色统一处理。 -->
+            <div
+              class="inline-flex self-start flex-wrap items-center gap-1 rounded-[1.1rem] bg-[var(--theme-control-surface)] p-1"
+              role="tablist"
+              aria-label="节点分组"
             >
-              全部
-            </button>
+              <button
+                type="button"
+                role="tab"
+                :aria-selected="selectedGroup === ''"
+                :class="[
+                  'font-ui-mixed text-ui rounded-[0.85rem] px-5 py-2 text-center whitespace-nowrap transition-all duration-200',
+                  selectedGroup === ''
+                    ? 'bg-[var(--theme-control-active-surface)] text-[var(--theme-text-primary)] shadow-[var(--theme-control-active-shadow)]'
+                    : 'bg-transparent text-[var(--theme-text-secondary)] hover:text-[var(--theme-text-primary)]',
+                ]"
+                @click="setGroup('')"
+              >
+                全部
+              </button>
 
-            <button
-              v-for="group in groups"
-              :key="group"
-              type="button"
-              role="tab"
-              :aria-selected="selectedGroup === group"
-              :class="[
-                'font-ui-mixed text-ui rounded-[0.85rem] px-5 py-2 text-center whitespace-nowrap transition-all duration-200',
-                selectedGroup === group
-                  ? 'bg-[var(--theme-control-active-surface)] text-[var(--theme-text-primary)] shadow-[var(--theme-control-active-shadow)]'
-                  : 'bg-transparent text-[var(--theme-text-secondary)] hover:text-[var(--theme-text-primary)]',
-              ]"
-              @click="setGroup(group)"
-            >
-              {{ group }}
-            </button>
-          </div>
+              <button
+                v-for="group in groups"
+                :key="group"
+                type="button"
+                role="tab"
+                :aria-selected="selectedGroup === group"
+                :class="[
+                  'font-ui-mixed text-ui rounded-[0.85rem] px-5 py-2 text-center whitespace-nowrap transition-all duration-200',
+                  selectedGroup === group
+                    ? 'bg-[var(--theme-control-active-surface)] text-[var(--theme-text-primary)] shadow-[var(--theme-control-active-shadow)]'
+                    : 'bg-transparent text-[var(--theme-text-secondary)] hover:text-[var(--theme-text-primary)]',
+                ]"
+                @click="setGroup(group)"
+              >
+                {{ group }}
+              </button>
+            </div>
 
-          <!-- 中文说明：实时网速放在分组行右侧，避免顶部导航随轮询抖动。 -->
-          <div class="text-ui flex items-center gap-3 text-[var(--theme-text-secondary)]">
-            <span class="font-body-zh">网络速率</span>
-            <span class="font-body-en text-[var(--theme-text-primary)]">
-              ↑ {{ formatSpeed(totalSpeed.up) }} ↓ {{ formatSpeed(totalSpeed.down) }}
-            </span>
+            <!-- 中文说明：实时网速放在分组行右侧，避免顶部导航随轮询抖动。 -->
+            <div class="text-ui flex items-center gap-3 text-[var(--theme-text-secondary)]">
+              <span class="font-body-zh">网络速率</span>
+              <span class="font-body-en text-[var(--theme-text-primary)]">
+                ↑ {{ formatSpeed(totalSpeed.up) }} ↓ {{ formatSpeed(totalSpeed.down) }}
+              </span>
+            </div>
           </div>
-        </div>
+        </Transition>
 
         <!-- 中文说明：节点卡片统一收敛到 NodeGrid 组件，避免页面层直接堆叠展示细节。 -->
-        <NodeGrid :nodes="filteredNodes" />
+        <NodeGrid
+          :nodes="displayNodes"
+          :active-node-uuid="activeNodeUuid"
+          @open-node="goToNode"
+          @close-node="goToHome"
+        />
       </section>
     </main>
 
@@ -208,3 +239,31 @@ onUnmounted(() => {
     </footer>
   </div>
 </template>
+
+<style scoped>
+.toolbar-switch-enter-active,
+.toolbar-switch-leave-active {
+  overflow: hidden;
+  transition:
+    max-height 220ms var(--ease-out-power2),
+    opacity 180ms ease,
+    transform 220ms var(--ease-out-power2),
+    margin 220ms var(--ease-out-power2);
+}
+
+.toolbar-switch-enter-from,
+.toolbar-switch-leave-to {
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(-10px);
+  margin-bottom: -0.5rem;
+}
+
+.toolbar-switch-enter-to,
+.toolbar-switch-leave-from {
+  max-height: 8rem;
+  opacity: 1;
+  transform: translateY(0);
+  margin-bottom: 0;
+}
+</style>
