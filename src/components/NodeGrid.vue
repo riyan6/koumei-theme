@@ -107,6 +107,13 @@ function collapseNode(): void {
   emit('close-node')
 }
 
+// 中文说明：列表卡片按顺序添加入场延迟，形成更有层次的逐个弹入效果。
+function cardAnimationStyle(index: number): { animationDelay: string } {
+  return {
+    animationDelay: `${index * 80}ms`,
+  }
+}
+
 // 中文说明：将标签数据做成可复用的计算结果，减少模板内重复执行函数。
 const tagsMap = computed(() =>
   Object.fromEntries(props.nodes.map(item => [item.node.uuid, nodeTags(item)])),
@@ -318,10 +325,11 @@ const flagUrlMap = computed(() =>
       class="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4"
     >
       <article
-        v-for="item in nodes"
+        v-for="(item, index) in nodes"
         :key="item.node.uuid"
-        class="flex min-h-[18.5rem] cursor-pointer flex-col rounded-[var(--br-24)] bg-[var(--theme-surface-panel)] p-4 text-[var(--theme-text-primary)] transition-all duration-300 ease-out hover:-translate-y-0.5 hover:shadow-[var(--surface-elevated-shadow)]"
+        class="node-grid-card flex min-h-[18.5rem] cursor-pointer flex-col rounded-[var(--br-24)] bg-[var(--theme-surface-panel)] p-4 text-[var(--theme-text-primary)] transition-all duration-300 ease-out hover:-translate-y-0.5 hover:shadow-[var(--surface-elevated-shadow)]"
         style="border: 0.5px solid var(--theme-divider);"
+        :style="cardAnimationStyle(index)"
         @click="expandNode(item.node.uuid)"
       >
         <div class="flex items-start justify-between gap-4">
@@ -482,5 +490,35 @@ const flagUrlMap = computed(() =>
 .node-detail-switch-leave-from {
   opacity: 1;
   transform: translateY(0) scale(1);
+}
+
+.node-grid-card {
+  animation-name: node-grid-card-bite;
+  animation-duration: 250ms;
+  animation-timing-function: cubic-bezier(.22, 1, .36, 1);
+  animation-fill-mode: both;
+}
+
+@keyframes node-grid-card-bite {
+  0% {
+    opacity: 0;
+    transform: translateY(26px) scale(0.985);
+  }
+
+  62% {
+    opacity: 1;
+    transform: translateY(-8px) scale(1);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .node-grid-card {
+    animation: none;
+  }
 }
 </style>
