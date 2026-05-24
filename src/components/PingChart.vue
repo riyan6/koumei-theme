@@ -1,12 +1,29 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import { CircleAlert } from 'lucide-vue-next'
 
-interface PingTask { id: number; name: string; interval: number; loss: number }
+interface PingTask {
+  id: number
+  name: string
+  interval: number
+  loss: number
+  type?: string
+  protocol?: string
+}
 interface PingRecord { task_id: number; time: string; value: number }
 
 const props = defineProps<{ uuid: string }>()
 
-const COLORS = ['#4E79A7', '#F28E2B', '#E15759', '#76B7B2', '#59A14F', '#EDC948', '#B07AA1', '#FF9DA7', '#9C755F', '#BAB0AC']
+const CLAUDE_CHART_COLORS = [
+  '#C07A45',
+  '#3A82A8',
+  '#4A9E6A',
+  '#9B6BB5',
+  '#C4883A',
+  '#C45A5A',
+  '#4A8E96',
+  '#7A8C5E',
+]
 const HOUR_OPTIONS = [
   { label: '1h', value: 1 },
   { label: '6h', value: 6 },
@@ -77,9 +94,44 @@ interface TaskSeries {
   color: string
   visible: boolean
   avg: number
+  min: number
+  max: number
+  latest: number
+  p50: number
+  p99: number
+  volatility: number
   loss: number
+  sampleCount: number
+  protocolLabel: string
   polyline: string
   points: PointData[]
+}
+
+// 中文说明：百分位数统一走线性插值，保证样本量较小时也能得到稳定结果。
+function percentile(values: number[], ratio: number): number {
+  if (!values.length) return 0
+
+  const sortedValues = [...values].sort((a, b) => a - b)
+  const index = (sortedValues.length - 1) * ratio
+  const lowerIndex = Math.floor(index)
+  const upperIndex = Math.ceil(index)
+
+  if (lowerIndex === upperIndex) {
+    return sortedValues[lowerIndex]
+  }
+
+  const weight = index - lowerIndex
+  return sortedValues[lowerIndex] * (1 - weight) + sortedValues[upperIndex] * weight
+}
+
+// 中文说明：官方的“波动”不是标准差，而是基于 P99-P50 的尾部抖动比值。
+function tailJitterRatio(p50: number, p99: number): number {
+  if (p50 <= 0 || p99 < p50) return 0
+
+  const jitterMs = p99 - p50
+  const adjustedBase = Math.max(Math.min(p50, 50), 10)
+
+  return jitterMs / adjustedBase
 }
 
 const vMax = computed(() => {
@@ -110,6 +162,13 @@ const series = computed<TaskSeries[]>(() => {
 
     const rawValues = validRecs.map(r => r.value)
     const displayValues = smoothEnabled.value ? ewma(rawValues) : rawValues
+    const min = rawValues.length ? Math.min(...rawValues) : 0
+    const max = rawValues.length ? Math.max(...rawValues) : 0
+    const latest = validRecs.length ? validRecs[validRecs.length - 1].value : 0
+    const p50 = percentile(rawValues, 0.5)
+    const p99 = percentile(rawValues, 0.99)
+    const volatility = tailJitterRatio(p50, p99)
+    const protocolLabel = task.type ?? task.protocol ?? '--'
 
     const points: PointData[] = validRecs.map((r, idx) => {
       const x = PAD_L + ((new Date(r.time).getTime() - tMin) / range) * W
@@ -119,10 +178,18 @@ const series = computed<TaskSeries[]>(() => {
 
     return {
       task,
-      color: COLORS[i % COLORS.length],
+      color: CLAUDE_CHART_COLORS[i % CLAUDE_CHART_COLORS.length],
       visible: visibility.value[task.id] ?? true,
       avg,
+      min,
+      max,
+      latest,
+      p50,
+      p99,
+      volatility,
       loss: task.loss,
+      sampleCount: recs.length,
+      protocolLabel,
       polyline: points.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '),
       points,
     }
@@ -221,137 +288,212 @@ function onMouseLeave() {
 </script>
 
 <template>
-  <div class="flex flex-col gap-3">
-    <!-- 图例 + 时间范围 -->
-    <div class="flex flex-wrap items-center justify-between gap-3">
-      <div class="flex flex-wrap gap-3">
-        <button
-          v-for="s in series"
-          :key="s.task.id"
-          type="button"
-          class="flex items-center gap-1.5 text-sm transition-opacity"
-          :class="s.visible ? 'opacity-100' : 'opacity-35'"
-          @click="toggleTask(s.task.id)"
-        >
-          <span class="inline-block h-2.5 w-2.5 rounded-full" :style="{ background: s.color }" />
-          <span class="text-muted-foreground" :class="!s.visible ? 'line-through' : ''">{{ s.task.name }}</span>
-          <span class="font-medium text-foreground">{{ s.avg.toFixed(1) }} ms</span>
-          <span class="text-xs text-muted-foreground">丢包 {{ s.loss.toFixed(1) }}%</span>
-        </button>
-      </div>
+  <div class="rounded-[1.5rem] border border-[var(--theme-divider)] bg-[var(--theme-surface-panel)] p-5 md:p-6">
+    <div class="flex flex-col gap-5">
+      <div class="flex flex-col gap-4 border-b border-[var(--theme-divider-soft)] pb-4">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h3 class="font-body-zh text-subheading text-[var(--theme-text-primary)]">网络延迟</h3>
 
-      <div class="flex items-center gap-2">
-        <!-- 平滑开关 -->
-        <button
-          type="button"
-          class="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
-          :class="smoothEnabled ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'"
-          @click="smoothEnabled = !smoothEnabled"
-        >
-          <span
-            class="inline-block h-3.5 w-6 rounded-full transition-colors"
-            :class="smoothEnabled ? 'bg-primary-foreground/30' : 'bg-muted-foreground/30'"
-          >
-            <span
-              class="block h-3 w-3 translate-y-px rounded-full bg-current shadow transition-transform"
-              :class="smoothEnabled ? 'translate-x-3' : 'translate-x-px'"
-            />
-          </span>
-          平滑
-        </button>
+          <div class="flex flex-wrap items-center justify-end gap-2">
+            <!-- 中文说明：平滑开关改成更轻的工具条按钮，减少与主内容的视觉竞争。 -->
+            <button
+              type="button"
+              class="inline-flex h-9 items-center gap-2 rounded-[0.85rem] border border-[var(--theme-divider)] bg-[var(--theme-surface-panel-subtle)] px-3 text-[var(--theme-text-secondary)] transition-colors duration-200 hover:text-[var(--theme-text-primary)]"
+              :class="smoothEnabled ? 'border-[var(--theme-accent-clay-primary)] bg-[var(--theme-accent-soft)] text-[var(--theme-text-primary)]' : ''"
+              @click="smoothEnabled = !smoothEnabled"
+            >
+              <span class="font-body-zh text-caption">平滑</span>
+              <span
+                class="relative h-4 w-7 rounded-[999px] transition-colors"
+                :class="smoothEnabled ? 'bg-[var(--theme-accent-soft-strong)]' : 'bg-[var(--theme-divider)]'"
+              >
+                <span
+                  class="absolute top-0.5 left-0.5 h-3 w-3 rounded-full bg-current shadow transition-transform"
+                  :class="smoothEnabled ? 'translate-x-3 text-[var(--theme-accent-clay-primary)]' : 'translate-x-0 text-[var(--theme-text-secondary)]'"
+                />
+              </span>
+            </button>
 
-        <!-- 时间范围 -->
-        <div class="flex items-center gap-1 rounded-md bg-muted p-1">
-          <button
-            v-for="opt in HOUR_OPTIONS"
-            :key="opt.value"
-            type="button"
-            class="rounded-sm px-2.5 py-1 text-xs font-medium transition-colors"
-            :class="hours === opt.value ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
-            @click="hours = opt.value"
-          >
-            {{ opt.label }}
-          </button>
+            <!-- 中文说明：时间维度改成独立分段控件，和图表工具按钮保持统一高度与边框语言。 -->
+            <div class="flex h-9 items-center gap-1 rounded-[0.85rem] border border-[var(--theme-divider)] bg-[var(--theme-surface-panel-subtle)] p-1">
+              <button
+                v-for="opt in HOUR_OPTIONS"
+                :key="opt.value"
+                type="button"
+                class="inline-flex h-7 min-w-[2.75rem] items-center justify-center rounded-[0.65rem] px-2.5 font-heading-en text-caption transition-colors duration-200"
+                :class="hours === opt.value
+                  ? 'bg-[var(--theme-control-active-surface)] text-[var(--theme-text-primary)] shadow-[var(--theme-control-active-shadow)]'
+                  : 'text-[var(--theme-text-secondary)] hover:text-[var(--theme-text-primary)]'"
+                @click="hours = opt.value"
+              >
+                {{ opt.label }}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- 加载 / 错误 / 无数据 -->
-    <div
-      v-if="loading || error || !series.length"
-      class="flex h-[336px] items-center justify-center rounded-md border border-border bg-muted/10 text-sm text-muted-foreground"
-      :class="!loading && !error && !series.length ? 'border-dashed' : ''"
-    >
-      <span v-if="loading">加载中…</span>
-      <span v-else-if="error">延迟数据加载失败</span>
-      <span v-else>暂无延迟数据</span>
-    </div>
+      <!-- 图例 -->
+      <div class="flex flex-wrap gap-3">
+        <div
+          v-for="s in series"
+          :key="s.task.id"
+          class="group/info relative"
+        >
+          <button
+            type="button"
+            class="flex min-w-[12rem] flex-col gap-1 rounded-[1rem] border border-[var(--theme-divider-soft)] bg-[var(--theme-surface-panel-subtle)] px-3 py-2 text-left transition-all duration-200"
+            :class="s.visible
+              ? 'opacity-100'
+              : 'border-[var(--theme-divider-subtle)] opacity-45'"
+            @click="toggleTask(s.task.id)"
+          >
+            <div class="flex items-center gap-2">
+              <span class="inline-block h-2.5 w-1 shrink-0 rounded-full" :style="{ background: s.color }" />
+              <span
+                class="font-ui-mixed min-w-0 flex-1 truncate text-subheading text-[var(--theme-text-primary)]"
+                :class="!s.visible ? 'line-through' : ''"
+              >
+                {{ s.task.name }}
+              </span>
+              <span
+                class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[var(--theme-text-tertiary)] transition-colors duration-200 group-hover/info:text-[var(--theme-text-primary)]"
+                :aria-label="`查看 ${s.task.name} 统计信息`"
+              >
+                <CircleAlert class="h-4 w-4" />
+              </span>
+            </div>
 
-    <!-- 图表 -->
-    <div
-      v-else
-      ref="wrapEl"
-      class="relative w-full overflow-hidden rounded-md border border-border bg-muted/10"
-    >
-      <svg
-        ref="svgEl"
-        :viewBox="`0 0 ${CHART_W} ${CHART_H}`"
-        preserveAspectRatio="xMidYMid meet"
-        class="h-[336px] w-full cursor-crosshair"
-        @mousemove="onMouseMove"
-        @mouseleave="onMouseLeave"
-      >
-        <!-- 参考线 + Y 标签 -->
-        <g v-for="lbl in yLabels" :key="lbl.y">
-          <line
-            :x1="PAD_L" :y1="lbl.y" :x2="CHART_W - PAD_R" :y2="lbl.y"
-            stroke="currentColor" stroke-opacity="0.1" stroke-width="1"
-          />
-          <text :x="PAD_L - 4" :y="lbl.y + 4" text-anchor="end" font-size="11" fill="currentColor" opacity="0.45">
-            {{ lbl.label }}
-          </text>
-        </g>
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-1 pl-3 font-ui-mixed text-caption text-[var(--theme-text-secondary)]">
+              <span class="font-heading-en text-[var(--theme-text-primary)]">{{ s.avg.toFixed(1) }} ms</span>
+              <span>丢包 {{ s.loss.toFixed(1) }}%</span>
+              <span>波动 {{ s.volatility.toFixed(2) }}</span>
+            </div>
+          </button>
 
-        <!-- X 轴标签 -->
-        <text
-          v-for="lbl in xLabels" :key="lbl.x"
-          :x="lbl.x" :y="CHART_H - 4"
-          text-anchor="middle" font-size="11" fill="currentColor" opacity="0.45"
-        >{{ lbl.label }}</text>
+          <div
+            class="pointer-events-none absolute top-full right-0 z-20 mt-2 w-[18rem] rounded-[1.25rem] border border-[var(--theme-divider)] bg-[var(--tooltip-surface)] p-4 opacity-0 shadow-[var(--surface-elevated-shadow)] transition-opacity duration-200 group-hover/info:opacity-100"
+          >
+            <div class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
+              <span class="font-body-zh text-caption text-[var(--theme-text-tertiary)]">最小值</span>
+              <span class="font-heading-en text-caption text-[var(--theme-text-primary)]">{{ s.min.toFixed(1) }} ms</span>
 
-        <!-- 折线 -->
-        <polyline
-          v-for="s in series" :key="s.task.id"
-          :points="s.polyline"
-          :stroke="s.color"
-          :stroke-width="s.visible ? 1.8 : 0"
-          fill="none"
-          stroke-linejoin="round"
-          stroke-linecap="round"
-        />
+              <span class="font-body-zh text-caption text-[var(--theme-text-tertiary)]">最大值</span>
+              <span class="font-heading-en text-caption text-[var(--theme-text-primary)]">{{ s.max.toFixed(1) }} ms</span>
 
-        <!-- 竖线 crosshair -->
-        <line
-          v-if="tooltip"
-          :x1="tooltip.svgX" y1="0"
-          :x2="tooltip.svgX" :y2="CHART_H - PAD_B"
-          stroke="currentColor" stroke-opacity="0.3" stroke-width="1" stroke-dasharray="4 3"
-        />
-      </svg>
+              <span class="font-body-zh text-caption text-[var(--theme-text-tertiary)]">平均值</span>
+              <span class="font-heading-en text-caption text-[var(--theme-text-primary)]">{{ s.avg.toFixed(1) }} ms</span>
 
-      <!-- HTML tooltip overlay -->
+              <span class="font-body-zh text-caption text-[var(--theme-text-tertiary)]">最新</span>
+              <span class="font-heading-en text-caption text-[var(--theme-text-primary)]">{{ s.latest.toFixed(1) }} ms</span>
+
+              <span class="font-body-zh text-caption text-[var(--theme-text-tertiary)]">波动</span>
+              <span class="font-heading-en text-caption text-[var(--theme-text-primary)]">{{ s.volatility.toFixed(2) }}</span>
+
+              <span class="font-body-zh text-caption text-[var(--theme-text-tertiary)]">p50</span>
+              <span class="font-heading-en text-caption text-[var(--theme-text-primary)]">{{ s.p50.toFixed(1) }} ms</span>
+
+              <span class="font-body-zh text-caption text-[var(--theme-text-tertiary)]">p99</span>
+              <span class="font-heading-en text-caption text-[var(--theme-text-primary)]">{{ s.p99.toFixed(1) }} ms</span>
+
+              <span class="font-body-zh text-caption text-[var(--theme-text-tertiary)]">丢包</span>
+              <span class="font-heading-en text-caption text-[var(--theme-text-primary)]">{{ s.loss.toFixed(1) }}%</span>
+
+              <span class="font-body-zh text-caption text-[var(--theme-text-tertiary)]">检测间隔</span>
+              <span class="font-heading-en text-caption text-[var(--theme-text-primary)]">{{ s.task.interval }}s</span>
+
+              <span class="font-body-zh text-caption text-[var(--theme-text-tertiary)]">类型</span>
+              <span class="font-heading-en text-caption text-[var(--theme-text-primary)]">{{ s.protocolLabel }}</span>
+
+              <span class="font-body-zh text-caption text-[var(--theme-text-tertiary)]">样本数量</span>
+              <span class="font-heading-en text-caption text-[var(--theme-text-primary)]">{{ s.sampleCount }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 加载 / 错误 / 无数据 -->
       <div
-        v-if="tooltip"
-        class="pointer-events-none absolute top-2 z-10 min-w-[140px] rounded-md border border-border bg-popover px-3 py-2 shadow-md"
-        :style="tooltip.flip
-          ? { right: `calc(100% - ${tooltip.leftPx}px + 8px)` }
-          : { left: `${tooltip.leftPx + 8}px` }"
+        v-if="loading || error || !series.length"
+        class="flex h-[336px] items-center justify-center rounded-[1.25rem] border border-[var(--theme-divider)] bg-[var(--theme-surface-panel-subtle)] text-sm text-[var(--theme-text-tertiary)]"
+        :class="!loading && !error && !series.length ? 'border-dashed' : ''"
       >
-        <p class="mb-1 text-xs text-muted-foreground">{{ tooltip.timeLabel }}</p>
-        <div v-for="item in tooltip.items" :key="item.name" class="flex items-center gap-1.5 text-sm">
-          <span class="inline-block h-2 w-2 shrink-0 rounded-full" :style="{ background: item.color }" />
-          <span class="text-muted-foreground">{{ item.name }}</span>
-          <span class="ml-auto pl-3 font-medium tabular-nums text-foreground">{{ item.value.toFixed(1) }} ms</span>
+        <span v-if="loading">加载中…</span>
+        <span v-else-if="error">延迟数据加载失败</span>
+        <span v-else>暂无延迟数据</span>
+      </div>
+
+      <!-- 图表 -->
+      <div
+        v-else
+        ref="wrapEl"
+        class="relative w-full overflow-hidden rounded-[1.25rem] border border-[var(--theme-divider)] bg-[var(--chart-surface)]"
+      >
+        <svg
+          ref="svgEl"
+          :viewBox="`0 0 ${CHART_W} ${CHART_H}`"
+          preserveAspectRatio="xMidYMid meet"
+          class="block h-[400px] w-full cursor-crosshair"
+          @mousemove="onMouseMove"
+          @mouseleave="onMouseLeave"
+        >
+          <!-- 参考线 + Y 标签 -->
+          <g v-for="lbl in yLabels" :key="lbl.y">
+            <line
+              :x1="PAD_L" :y1="lbl.y" :x2="CHART_W - PAD_R" :y2="lbl.y"
+              :stroke="'var(--chart-grid)'"
+              stroke-opacity="0.75"
+              stroke-width="1"
+            />
+            <text :x="PAD_L - 4" :y="lbl.y + 4" text-anchor="end" font-size="11" :fill="'var(--chart-axis)'">
+              {{ lbl.label }}
+            </text>
+          </g>
+
+          <!-- X 轴标签 -->
+          <text
+            v-for="lbl in xLabels" :key="lbl.x"
+            :x="lbl.x" :y="CHART_H - 4"
+            text-anchor="middle" font-size="11" :fill="'var(--chart-axis)'"
+          >{{ lbl.label }}</text>
+
+          <!-- 折线 -->
+          <polyline
+            v-for="s in series" :key="s.task.id"
+            :points="s.polyline"
+            :stroke="s.color"
+            :stroke-width="s.visible ? 2.25 : 0"
+            fill="none"
+            stroke-linejoin="round"
+            stroke-linecap="round"
+          />
+
+          <!-- 竖线 crosshair -->
+          <line
+            v-if="tooltip"
+            :x1="tooltip.svgX" y1="0"
+            :x2="tooltip.svgX" :y2="CHART_H - PAD_B"
+            :stroke="'var(--chart-crosshair)'"
+            stroke-opacity="0.65"
+            stroke-width="1"
+            stroke-dasharray="4 3"
+          />
+        </svg>
+
+        <!-- HTML tooltip overlay -->
+        <div
+          v-if="tooltip"
+          class="pointer-events-none absolute top-2 z-10 min-w-[160px] rounded-[1rem] border border-[var(--theme-divider)] bg-[var(--tooltip-surface)] px-3 py-2 shadow-[var(--surface-elevated-shadow)]"
+          :style="tooltip.flip
+            ? { right: `calc(100% - ${tooltip.leftPx}px + 8px)` }
+            : { left: `${tooltip.leftPx + 8}px` }"
+        >
+          <p class="mb-1 font-body-zh text-caption text-[var(--theme-text-tertiary)]">{{ tooltip.timeLabel }}</p>
+          <div v-for="item in tooltip.items" :key="item.name" class="flex items-center gap-1.5 text-sm">
+            <span class="inline-block h-2 w-2 shrink-0 rounded-full" :style="{ background: item.color }" />
+            <span class="font-ui-mixed text-caption text-[var(--theme-text-secondary)]">{{ item.name }}</span>
+            <span class="ml-auto pl-3 font-heading-en text-caption tabular-nums text-[var(--theme-text-primary)]">{{ item.value.toFixed(1) }} ms</span>
+          </div>
         </div>
       </div>
     </div>

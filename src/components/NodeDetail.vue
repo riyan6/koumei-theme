@@ -1,54 +1,68 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { formatBytes, formatSpeed, formatPercent, formatUptime } from '@/lib/utils'
-import PingChart from '@/components/PingChart.vue'
+import { formatBytes, formatPercent, formatUptime } from '@/lib/utils'
 import type { NodeWithStatus } from '@/types/node'
 
 const props = defineProps<{ data: NodeWithStatus }>()
 
-const s = computed(() => props.data.status)
-const n = computed(() => props.data.node)
+const summarySections = computed(() => {
+  const status = props.data.status
+  const node = props.data.node
 
-const rows = computed(() => {
-  const st = s.value
-  const nd = n.value
-  if (!st) return []
+  if (!status) {
+    return [
+      { label: '系统', value: `${node.os}${node.arch ? ` [${node.arch}]` : ''}` },
+      { label: 'CPU 型号', value: `${node.cpu_name} · ${node.cpu_cores} 核` },
+      { label: '虚拟化', value: node.virtualization ? node.virtualization.toUpperCase() : '--' },
+      { label: '内存总量', value: formatBytes(node.mem_total, 2) },
+      { label: '磁盘总量', value: formatBytes(node.disk_total, 2) },
+      { label: '交换空间', value: formatBytes(node.swap_total, 2) },
+    ]
+  }
 
-  const diskPct = formatPercent(st.disk, st.disk_total ?? nd.disk_total)
-  const ramPct = formatPercent(st.ram, st.ram_total ?? nd.mem_total)
-  const swapPct = formatPercent(st.swap, st.swap_total ?? nd.swap_total)
+  const diskTotal = status.disk_total ?? node.disk_total
+  const ramTotal = status.ram_total ?? node.mem_total
+  const swapTotal = status.swap_total ?? node.swap_total
+  const diskPct = formatPercent(status.disk, diskTotal)
+  const ramPct = formatPercent(status.ram, ramTotal)
+  const swapPct = formatPercent(status.swap, swapTotal)
 
   return [
-    { label: '系统', value: `${nd.os}${nd.arch ? ` [${nd.arch}]` : ''}` },
-    { label: 'CPU', value: `${nd.cpu_name} · ${nd.cpu_cores} 核 (${st.cpu.toFixed(2)}%)` },
-    { label: '硬盘', value: `${formatBytes(st.disk, 2)} / ${formatBytes(st.disk_total ?? nd.disk_total, 2)} (${diskPct.toFixed(2)}%)` },
-    { label: '内存', value: `${formatBytes(st.ram, 2)} / ${formatBytes(st.ram_total ?? nd.mem_total, 2)} (${ramPct.toFixed(2)}%)` },
-    { label: '交换', value: `${formatBytes(st.swap, 2)} / ${formatBytes(st.swap_total ?? nd.swap_total, 2)} (${swapPct.toFixed(2)}%)` },
-    { label: '流量', value: `IN ${formatBytes(st.net_total_down, 2)} / OUT ${formatBytes(st.net_total_up, 2)}` },
-    { label: '网速', value: `↑ ${formatSpeed(st.net_out)} · ↓ ${formatSpeed(st.net_in)}` },
-    { label: '负载', value: `${st.load.toFixed(2)} / ${st.load5.toFixed(2)} / ${st.load15.toFixed(2)}` },
-    { label: '进程数', value: String(st.process) },
-    { label: '连接数', value: `TCP ${st.connections} / UDP ${st.connections_udp}` },
-    { label: '活动', value: new Date(st.time).toLocaleString('zh-CN', { hour12: false }) },
-    ...(st.uptime != null ? [{ label: '在线', value: formatUptime(st.uptime) }] : []),
-    ...(nd.virtualization ? [{ label: '虚拟化', value: `${nd.virtualization.toUpperCase()} · ${nd.arch}` }] : []),
+    { label: '系统', value: `${node.os}${node.arch ? ` [${node.arch}]` : ''}` },
+    { label: '内核版本', value: node.kernel_version || '--' },
+    { label: 'CPU 型号', value: `${node.cpu_name} · ${node.cpu_cores} 核` },
+    { label: 'CPU 使用率', value: `${status.cpu.toFixed(2)}%` },
+    { label: 'GPU 使用率', value: `${status.gpu.toFixed(2)}%` },
+    { label: '负载均值', value: `${status.load.toFixed(2)} / ${status.load5.toFixed(2)} / ${status.load15.toFixed(2)}` },
+    { label: '内存占用', value: `${formatBytes(status.ram, 2)} / ${formatBytes(ramTotal, 2)} (${ramPct.toFixed(2)}%)` },
+    { label: '交换占用', value: `${formatBytes(status.swap, 2)} / ${formatBytes(swapTotal, 2)} (${swapPct.toFixed(2)}%)` },
+    { label: '磁盘占用', value: `${formatBytes(status.disk, 2)} / ${formatBytes(diskTotal, 2)} (${diskPct.toFixed(2)}%)` },
+    { label: '进程数', value: String(status.process) },
+    { label: '连接数', value: `TCP ${status.connections} / UDP ${status.connections_udp}` },
+    { label: '运行时长', value: status.uptime != null ? formatUptime(status.uptime) : '--' },
+    { label: '最近活动', value: new Date(status.time).toLocaleString('zh-CN', { hour12: false }) },
+    { label: '虚拟化', value: node.virtualization ? node.virtualization.toUpperCase() : '--' },
   ]
 })
 </script>
 
 <template>
-  <div class="flex flex-col gap-4 p-5">
-    <!-- 详细信息 -->
-    <div class="grid grid-cols-2 gap-x-8 gap-y-1 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-      <div v-for="row in rows" :key="row.label" class="flex gap-1.5 text-sm">
-        <span class="shrink-0 text-muted-foreground">{{ row.label }}：</span>
-        <span class="truncate text-foreground">{{ row.value }}</span>
-      </div>
+  <div class="rounded-[1.5rem] border border-[var(--theme-divider)] bg-[var(--theme-surface-panel)] p-5 md:p-6">
+    <div class="border-b border-[var(--theme-divider-soft)] pb-3">
+      <h3 class="font-body-zh text-subheading text-[var(--theme-text-primary)]">节点摘要</h3>
     </div>
 
-    <div class="border-t border-border" />
-
-    <!-- 延迟图表 -->
-    <PingChart :uuid="data.node.uuid" />
+    <div class="mt-5 grid grid-cols-1 gap-x-8 gap-y-4 md:grid-cols-2 xl:grid-cols-3">
+      <div
+        v-for="row in summarySections"
+        :key="row.label"
+        class="space-y-1 border-b border-[var(--theme-divider-subtle)] pb-3 last:border-b-0"
+      >
+        <p class="font-body-zh text-caption text-[var(--theme-text-tertiary)]">{{ row.label }}</p>
+        <p class="font-ui-mixed text-ui break-words text-[var(--theme-text-primary)]">
+          {{ row.value }}
+        </p>
+      </div>
+    </div>
   </div>
 </template>

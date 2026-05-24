@@ -82,3 +82,34 @@ export function maskIp(ip: string): string {
   }
   return ip
 }
+
+// 中文说明：Komari 的 region 可能是旗帜 emoji，也可能直接是地区短码，这里统一转换成大写短码供资源路径复用。
+export function normalizeRegionCode(region: string): string {
+  if (!region) return ''
+
+  const trimmedRegion = region.trim()
+  const asciiCode = trimmedRegion.match(/[A-Za-z]{2}/)?.[0]
+  if (asciiCode) {
+    return asciiCode.toUpperCase()
+  }
+
+  const codePoints = Array.from(trimmedRegion)
+    .map(char => char.codePointAt(0))
+    .filter((value): value is number => value != null)
+
+  if (codePoints.length === 2 && codePoints.every(value => value >= 0x1F1E6 && value <= 0x1F1FF)) {
+    return codePoints
+      .map(value => String.fromCharCode(65 + value - 0x1F1E6))
+      .join('')
+  }
+
+  return ''
+}
+
+// 中文说明：旗帜资源统一走相对路径，开发环境由 Vite 代理到后端，生产环境由 Komari 同源提供。
+export function getFlagUrl(region: string): string {
+  const regionCode = normalizeRegionCode(region)
+  if (!regionCode) return ''
+
+  return `/assets/flags/${regionCode}.svg`
+}
