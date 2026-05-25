@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, onUnmounted, watch } from 'vue'
 import { CircleAlert } from 'lucide-vue-next'
 
 interface PingTask {
@@ -78,13 +78,13 @@ function toggleTask(id: number) {
 }
 
 // ── Chart geometry ──────────────────────────────────────────
-const CHART_W = 1000
-const CHART_H = 300
-const PAD_L = 52
-const PAD_B = 28
+const SVG_DISPLAY_HEIGHT = 480
+const CHART_H = 340
+// 中文说明：绘图区直接顶到左右两侧，只给坐标文本保留极小安全距离。
+const PAD_L = 0
+const PAD_B = 32
 const PAD_T = 16
-const PAD_R = 16
-const W = CHART_W - PAD_L - PAD_R
+const PAD_R = 0
 const H = CHART_H - PAD_T - PAD_B
 
 interface PointData { x: number; y: number; time: string; value: number; taskId: number }
@@ -151,6 +151,7 @@ const series = computed<TaskSeries[]>(() => {
   if (!pingTasks.value.length) return []
   const { tMin, range } = tRange.value
   const vm = vMax.value
+  const chartWidth = W.value
 
   return pingTasks.value.map((task, i) => {
     const recs = pingRecords.value
@@ -171,7 +172,7 @@ const series = computed<TaskSeries[]>(() => {
     const protocolLabel = task.type ?? task.protocol ?? '--'
 
     const points: PointData[] = validRecs.map((r, idx) => {
-      const x = PAD_L + ((new Date(r.time).getTime() - tMin) / range) * W
+      const x = PAD_L + ((new Date(r.time).getTime() - tMin) / range) * chartWidth
       const y = PAD_T + H - (displayValues[idx] / vm) * H
       return { x, y, time: r.time, value: r.value, taskId: task.id }
     })
@@ -200,6 +201,7 @@ const yLabels = computed(() =>
   [0, 0.25, 0.5, 0.75, 1].map(f => ({
     y: PAD_T + H - f * H,
     label: f === 0 ? '0' : `${Math.round(f * vMax.value)}`,
+    topPx: (PAD_T + H - f * H) / CHART_H * SVG_DISPLAY_HEIGHT,
   }))
 )
 
@@ -207,12 +209,14 @@ const xLabels = computed(() => {
   const { tMin, range } = tRange.value
   if (!pingRecords.value.length) return []
   const count = 6
+  const chartWidth = W.value
   return Array.from({ length: count + 1 }, (_, i) => {
     const t = tMin + (i / count) * range
     const d = new Date(t)
     return {
-      x: PAD_L + (i / count) * W,
+      x: PAD_L + (i / count) * chartWidth,
       label: `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`,
+      anchor: i === 0 ? 'start' : i === count ? 'end' : 'middle',
     }
   })
 })
@@ -231,6 +235,38 @@ interface TooltipState {
 const tooltip = ref<TooltipState | null>(null)
 const wrapEl = ref<HTMLDivElement | null>(null)
 const svgEl = ref<SVGSVGElement | null>(null)
+const chartViewportWidth = ref(1000)
+let chartResizeObserver: ResizeObserver | null = null
+
+function syncChartViewportWidth() {
+  if (!wrapEl.value) {
+    return
+  }
+
+  // 中文说明：SVG 视口宽高比跟随真实容器，避免超宽布局下出现左右留白。
+  chartViewportWidth.value = Math.max(320, (wrapEl.value.clientWidth * CHART_H) / SVG_DISPLAY_HEIGHT)
+}
+
+const W = computed(() => chartViewportWidth.value - PAD_L - PAD_R)
+
+watch(wrapEl, (element) => {
+  chartResizeObserver?.disconnect()
+  chartResizeObserver = null
+
+  if (!element) {
+    return
+  }
+
+  syncChartViewportWidth()
+  chartResizeObserver = new ResizeObserver(() => {
+    syncChartViewportWidth()
+  })
+  chartResizeObserver.observe(element)
+})
+
+onUnmounted(() => {
+  chartResizeObserver?.disconnect()
+})
 
 function onMouseMove(e: MouseEvent) {
   if (!svgEl.value || !wrapEl.value || !series.value.length) return
@@ -243,11 +279,12 @@ function onMouseMove(e: MouseEvent) {
   if (!ctm) return
   const svgPt = pt.matrixTransform(ctm.inverse())
   const mx = svgPt.x
+  const chartWidth = W.value
 
-  if (mx < PAD_L || mx > PAD_L + W) { tooltip.value = null; return }
+  if (mx < PAD_L || mx > PAD_L + chartWidth) { tooltip.value = null; return }
 
   const { tMin, range } = tRange.value
-  const ratio = (mx - PAD_L) / W
+  const ratio = (mx - PAD_L) / chartWidth
   const targetT = tMin + ratio * range
 
   const items: { color: string; name: string; value: number; pt: PointData }[] = []
@@ -288,7 +325,8 @@ function onMouseLeave() {
 </script>
 
 <template>
-  <div class="rounded-[1.5rem] border border-[var(--theme-divider)] bg-[var(--theme-surface-panel)] p-5 md:p-6">
+  <!-- 中文说明：网络延迟区域改为直接贴合详情版面，去掉外层卡片和多余内边距。 -->
+  <div>
     <div class="flex flex-col gap-5">
       <div class="flex flex-col gap-4 border-b border-[var(--theme-divider-soft)] pb-4">
         <div class="flex flex-wrap items-center justify-between gap-3">
@@ -333,16 +371,16 @@ function onMouseLeave() {
         </div>
       </div>
 
-      <!-- 图例 -->
-      <div class="flex flex-wrap gap-3">
+      <!-- 中文说明：移动端图例改成两列栅格，减少单列堆叠带来的纵向浪费。 -->
+      <div class="grid grid-cols-2 gap-3 md:flex md:flex-wrap">
         <div
           v-for="s in series"
           :key="s.task.id"
-          class="group/info relative"
+          class="group/info relative min-w-0"
         >
           <button
             type="button"
-            class="flex min-w-[12rem] flex-col gap-1 rounded-[1rem] border border-[var(--theme-divider-soft)] bg-[var(--theme-surface-panel-subtle)] px-3 py-2 text-left transition-all duration-200"
+            class="flex w-full min-w-0 flex-col gap-1 rounded-[1rem] border border-[var(--theme-divider-soft)] bg-[var(--theme-surface-panel-subtle)] px-3 py-2 text-left transition-all duration-200 md:min-w-[12rem] md:w-auto"
             :class="s.visible
               ? 'opacity-100'
               : 'border-[var(--theme-divider-subtle)] opacity-45'"
@@ -415,8 +453,7 @@ function onMouseLeave() {
       <!-- 加载 / 错误 / 无数据 -->
       <div
         v-if="loading || error || !series.length"
-        class="flex h-[336px] items-center justify-center rounded-[1.25rem] border border-[var(--theme-divider)] bg-[var(--theme-surface-panel-subtle)] text-sm text-[var(--theme-text-tertiary)]"
-        :class="!loading && !error && !series.length ? 'border-dashed' : ''"
+        class="flex h-[336px] items-center justify-center rounded-[1rem] bg-[var(--theme-surface-panel-subtle)] text-sm text-[var(--theme-text-tertiary)]"
       >
         <span v-if="loading">加载中…</span>
         <span v-else-if="error">延迟数据加载失败</span>
@@ -427,34 +464,31 @@ function onMouseLeave() {
       <div
         v-else
         ref="wrapEl"
-        class="relative w-full overflow-hidden rounded-[1.25rem] border border-[var(--theme-divider)] bg-[var(--chart-surface)]"
+        class="relative w-full overflow-hidden rounded-[1rem] bg-[var(--chart-surface)]"
       >
         <svg
           ref="svgEl"
-          :viewBox="`0 0 ${CHART_W} ${CHART_H}`"
+          :viewBox="`0 0 ${chartViewportWidth} ${CHART_H}`"
           preserveAspectRatio="xMidYMid meet"
-          class="block h-[400px] w-full cursor-crosshair"
+          class="block h-[480px] w-full cursor-crosshair"
           @mousemove="onMouseMove"
           @mouseleave="onMouseLeave"
         >
           <!-- 参考线 + Y 标签 -->
           <g v-for="lbl in yLabels" :key="lbl.y">
             <line
-              :x1="PAD_L" :y1="lbl.y" :x2="CHART_W - PAD_R" :y2="lbl.y"
+              :x1="PAD_L" :y1="lbl.y" :x2="chartViewportWidth - PAD_R" :y2="lbl.y"
               :stroke="'var(--chart-grid)'"
               stroke-opacity="0.75"
               stroke-width="1"
             />
-            <text :x="PAD_L - 4" :y="lbl.y + 4" text-anchor="end" font-size="11" :fill="'var(--chart-axis)'">
-              {{ lbl.label }}
-            </text>
           </g>
 
           <!-- X 轴标签 -->
           <text
             v-for="lbl in xLabels" :key="lbl.x"
-            :x="lbl.x" :y="CHART_H - 4"
-            text-anchor="middle" font-size="11" :fill="'var(--chart-axis)'"
+            :x="lbl.x" :y="CHART_H - 6"
+            :text-anchor="lbl.anchor" font-size="11" :fill="'var(--chart-axis)'"
           >{{ lbl.label }}</text>
 
           <!-- 折线 -->
@@ -462,7 +496,7 @@ function onMouseLeave() {
             v-for="s in series" :key="s.task.id"
             :points="s.polyline"
             :stroke="s.color"
-            :stroke-width="s.visible ? 2.25 : 0"
+            :stroke-width="s.visible ? 1.25 : 0"
             fill="none"
             stroke-linejoin="round"
             stroke-linecap="round"
@@ -480,10 +514,22 @@ function onMouseLeave() {
           />
         </svg>
 
+        <!-- 中文说明：Y 轴标签改为 HTML 浮层，压在线条之上，既不占绘图区宽度也不会被遮挡。 -->
+        <div class="pointer-events-none absolute inset-y-0 left-0 z-10 w-14">
+          <div
+            v-for="lbl in yLabels"
+            :key="`axis-${lbl.y}`"
+            class="absolute left-0 rounded-sm bg-[color-mix(in_srgb,var(--theme-surface-page)_92%,transparent)] px-2 py-0.5 font-heading-en text-[14px] leading-none text-[var(--chart-axis)]"
+            :style="{ top: `${lbl.topPx - 8}px` }"
+          >
+            {{ lbl.label }}
+          </div>
+        </div>
+
         <!-- HTML tooltip overlay -->
         <div
           v-if="tooltip"
-          class="pointer-events-none absolute top-2 z-10 min-w-[160px] rounded-[1rem] border border-[var(--theme-divider)] bg-[var(--tooltip-surface)] px-3 py-2 shadow-[var(--surface-elevated-shadow)]"
+          class="pointer-events-none absolute top-2 z-20 min-w-[160px] rounded-[1rem] border border-[var(--theme-divider)] bg-[var(--tooltip-surface)] px-3 py-2 shadow-[var(--surface-elevated-shadow)]"
           :style="tooltip.flip
             ? { right: `calc(100% - ${tooltip.leftPx}px + 8px)` }
             : { left: `${tooltip.leftPx + 8}px` }"

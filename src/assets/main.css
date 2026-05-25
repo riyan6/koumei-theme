@@ -129,6 +129,15 @@
   --radius: 0.5rem;
 }
 
+@media (max-width: 767px) {
+  :root {
+    /* 中文说明：移动端左右留白收紧到 5px，保证导航、列表和详情页都能尽量铺满屏幕。 */
+    --container-margin: 5px;
+    --page-margin: 5px;
+    --gutter: 10px;
+  }
+}
+
 :root,
 [data-theme='light'] {
   /* 中文说明：当前现有的整套视觉先完整归入 light 主题，保证切换前后默认观感一致。 */

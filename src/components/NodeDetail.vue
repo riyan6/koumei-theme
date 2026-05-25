@@ -13,10 +13,12 @@ const summarySections = computed(() => {
     return [
       { label: '系统', value: `${node.os}${node.arch ? ` [${node.arch}]` : ''}` },
       { label: 'CPU 型号', value: `${node.cpu_name} · ${node.cpu_cores} 核` },
-      { label: '虚拟化', value: node.virtualization ? node.virtualization.toUpperCase() : '--' },
       { label: '内存总量', value: formatBytes(node.mem_total, 2) },
       { label: '磁盘总量', value: formatBytes(node.disk_total, 2) },
       { label: '交换空间', value: formatBytes(node.swap_total, 2) },
+      // 中文说明：未拿到实时状态时，流量摘要先回退为占位文案，保持字段结构稳定。
+      { label: '流量情况', value: '↑ -- / ↓ --' },
+      { label: '虚拟化', value: node.virtualization ? node.virtualization.toUpperCase() : '--' },
     ]
   }
 
@@ -41,13 +43,16 @@ const summarySections = computed(() => {
     { label: '连接数', value: `TCP ${status.connections} / UDP ${status.connections_udp}` },
     { label: '运行时长', value: status.uptime != null ? formatUptime(status.uptime) : '--' },
     { label: '最近活动', value: new Date(status.time).toLocaleString('zh-CN', { hour12: false }) },
+    // 中文说明：节点摘要补充累计上传/下载流量，便于在详情区快速判断长期使用情况。
+    { label: '流量情况', value: `↑ ${formatBytes(status.net_total_up, 1)} / ↓ ${formatBytes(status.net_total_down, 1)}` },
     { label: '虚拟化', value: node.virtualization ? node.virtualization.toUpperCase() : '--' },
   ]
 })
 </script>
 
 <template>
-  <div class="rounded-[1.5rem] border border-[var(--theme-divider)] bg-[var(--theme-surface-panel)] p-5 md:p-6">
+  <!-- 中文说明：节点摘要直接融入详情页主版面，去掉外层卡片和额外内边距，减少层层包裹。 -->
+  <div>
     <div class="border-b border-[var(--theme-divider-soft)] pb-3">
       <h3 class="font-body-zh text-subheading text-[var(--theme-text-primary)]">节点摘要</h3>
     </div>

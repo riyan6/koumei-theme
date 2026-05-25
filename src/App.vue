@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Check, ChevronDown } from 'lucide-vue-next'
 import NodeGrid from '@/components/NodeGrid.vue'
 import { useInstanceRoute } from '@/composables/useInstanceRoute'
@@ -17,6 +17,7 @@ const themeOptions: Array<{ mode: ThemeMode; label: string }> = [
 // 中文说明：全局主题切换统一由 composable 托管，页面层只负责渲染按钮和响应交互。
 const { themeMode, setThemeMode } = useThemeMode()
 const { activeNodeUuid, goToHome, goToNode } = useInstanceRoute()
+const hasScrolled = ref(false)
 
 // 中文说明：首页中部直接复用现有节点数据结构，先实现分组切换和基础卡片展示。
 const {
@@ -51,24 +52,41 @@ watch([activeNodeUuid, nodesWithStatus], ([currentUuid, currentNodes]) => {
   }
 })
 
+function updateNavbarDivider() {
+  // 中文说明：页面只要离开顶部，就给导航补上一条底部分割线，增强层次感。
+  hasScrolled.value = window.scrollY > 8
+}
+
 onMounted(() => {
   // 中文说明：页面加载时初始化节点数据，接口失败时会自动回退到 mock 数据。
   initializeData()
+  // 中文说明：挂载时立刻同步一次滚动状态，并监听后续滚动变化。
+  updateNavbarDivider()
+  window.addEventListener('scroll', updateNavbarDivider, { passive: true })
 })
 
 onUnmounted(() => {
   // 中文说明：页面离开时清理轮询，避免重复请求。
   disposeRealtime()
+  // 中文说明：移除滚动监听，避免组件销毁后仍然持有回调。
+  window.removeEventListener('scroll', updateNavbarDivider)
 })
 </script>
 
 <template>
   <!-- 中文说明：首页先搭建基础框架，当前仅展示导航栏效果。 -->
   <div class="min-h-screen bg-background text-foreground">
-    <header class="fixed inset-x-0 top-0 z-40 bg-[color-mix(in_srgb,var(--theme-surface-page)_92%,transparent)] backdrop-blur-sm">
+    <header
+      :class="[
+        'fixed inset-x-0 top-0 z-40 bg-[color-mix(in_srgb,var(--theme-surface-page)_92%,transparent)] backdrop-blur-sm transition-[border-color] duration-200',
+        hasScrolled
+          ? 'border-b border-[var(--theme-border-tertiary)]'
+          : 'border-b border-transparent',
+      ]"
+    >
       <!-- 中文说明：导航内容使用统一容器宽度，确保不会超过 1440px。 -->
       <div class="site-container">
-        <div class="flex h-[82px] flex-wrap items-center justify-between gap-4">
+        <div class="flex h-[82px] items-center justify-between gap-4">
           <a
             href="/"
             class="inline-flex items-center gap-3 font-heading-en text-h3 text-foreground transition-opacity duration-200 hover:opacity-70"
@@ -83,10 +101,21 @@ onUnmounted(() => {
             <span>Koumei</span>
           </a>
 
-          <div class="flex flex-wrap items-center justify-end gap-3">
-            <!-- 中文说明：主题切换改成导航样式的 hover 菜单，和当前页面头部语言保持一致。 -->
-            <nav aria-label="主导航">
-              <ul class="text-ui flex flex-wrap items-center justify-end gap-x-6 gap-y-2 text-foreground">
+          <div class="flex items-center justify-end gap-3">
+            <!-- 中文说明：移动端导航只保留管理按钮，避免统计项和菜单换行后撑高固定头部。 -->
+            <a
+              href="/admin"
+              class="font-body-zh inline-flex min-h-10 items-center justify-center rounded-[0.9rem] bg-[var(--theme-button-primary-bg)] px-5 py-2 text-[var(--theme-button-primary-fg)] transition-[transform,opacity] duration-200 ease-out hover:scale-[1.03] hover:opacity-90 md:hidden"
+            >
+              管理
+            </a>
+
+            <!-- 中文说明：完整导航仅在中等及以上视口展示，移动端隐藏以保持头部稳定高度。 -->
+            <nav
+              aria-label="主导航"
+              class="hidden md:block"
+            >
+              <ul class="text-ui flex items-center justify-end gap-x-6 text-foreground">
                 <li>
                   <span class="font-body-zh text-[var(--theme-text-secondary)]">服务器数量</span>
                   <span class="font-body-en ml-2 text-[var(--theme-text-primary)]">{{ totalCount }}</span>
@@ -132,9 +161,10 @@ onUnmounted(() => {
                   </div>
                 </li>
                 <li>
+                  <!-- 中文说明：管理按钮增加轻微缩放动效，悬停时更有反馈，移开后平滑恢复。 -->
                   <a
                     href="/admin"
-                    class="font-body-zh inline-flex min-h-10 items-center justify-center rounded-[0.9rem] bg-[var(--theme-button-primary-bg)] px-5 py-2 text-[var(--theme-button-primary-fg)] transition-opacity duration-200 hover:opacity-90"
+                    class="font-body-zh inline-flex min-h-10 items-center justify-center rounded-[0.9rem] bg-[var(--theme-button-primary-bg)] px-5 py-2 text-[var(--theme-button-primary-fg)] transition-[transform,opacity] duration-200 ease-out hover:scale-[1.03] hover:opacity-90"
                   >
                     管理
                   </a>
