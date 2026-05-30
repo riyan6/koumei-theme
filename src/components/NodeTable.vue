@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { formatBytes, formatSpeed, formatUptime, formatPercent, formatOsName } from '@/lib/utils'
+import { cleanNodeName, formatBytes, formatSpeed, formatUptime, formatPercent, formatOsName } from '@/lib/utils'
 import NodeDetail from '@/components/NodeDetail.vue'
 import type { NodeWithStatus } from '@/types/node'
 
@@ -90,7 +90,7 @@ function loadText(n: NodeWithStatus) {
                 class="inline-block h-3 w-3 shrink-0 rounded-full"
                 :class="n.online ? 'bg-emerald-500' : 'bg-rose-400'"
               />
-              <span class="font-medium text-foreground">{{ n.node.name }}</span>
+              <span class="font-medium text-foreground">{{ cleanNodeName(n.node.name) }}</span>
             </div>
           </td>
 
@@ -116,12 +116,12 @@ function loadText(n: NodeWithStatus) {
 
           <!-- 网速 -->
           <td class="px-3 py-2.5 text-right whitespace-nowrap tabular-nums text-muted-foreground">
-            ↑ {{ netSpeed(n).up }} ↓ {{ netSpeed(n).down }}
+            <span class="text-[var(--theme-accent-clay-primary)] font-bold">↑</span> {{ netSpeed(n).up }} <span class="text-[var(--theme-accent-clay-primary)] font-bold">↓</span> {{ netSpeed(n).down }}
           </td>
 
           <!-- 总流量 -->
           <td class="px-3 py-2.5 text-right whitespace-nowrap tabular-nums text-muted-foreground">
-            ↑ {{ netTotal(n).up }} ↓ {{ netTotal(n).down }}
+            <span class="text-[var(--theme-accent-clay-primary)] font-bold">↑</span> {{ netTotal(n).up }} <span class="text-[var(--theme-accent-clay-primary)] font-bold">↓</span> {{ netTotal(n).down }}
           </td>
 
           <!-- CPU -->

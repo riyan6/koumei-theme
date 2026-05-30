@@ -109,15 +109,15 @@
   --font-body-en: 'Lora', serif;
   --font-body-zh: 'Noto Sans SC', 'Source Han Sans SC', 'Source Han Sans', sans-serif;
   /* 中文说明：沿用你给的字号体系，但保留项目当前的 Lora / Noto Sans SC 字体组合。 */
-  --text-xs: 11px;
+  --text-xs: 12px;
   --text-sm: 13px;
-  --text-base: 15px;
-  --text-md: 17px;
-  --text-lg: 20px;
-  --text-xl: 26px;
-  --text-2xl: 34px;
-  --text-3xl: 44px;
-  --text-4xl: 56px;
+  --text-base: 14px;
+  --text-md: 16px;
+  --text-lg: 18px;
+  --text-xl: 20px;
+  --text-2xl: 24px;
+  --text-3xl: 32px;
+  --text-4xl: 40px;
   --leading-tight: 1.2;
   --leading-snug: 1.35;
   --leading-normal: 1.6;

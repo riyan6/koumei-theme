@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onUnmounted, watch } from 'vue'
-import { CircleAlert } from 'lucide-vue-next'
+import { Info } from 'lucide-vue-next'
 
 interface PingTask {
   id: number
@@ -25,10 +25,10 @@ const CLAUDE_CHART_COLORS = [
   '#7A8C5E',
 ]
 const HOUR_OPTIONS = [
-  { label: '1h', value: 1 },
-  { label: '6h', value: 6 },
-  { label: '12h', value: 12 },
-  { label: '1d', value: 24 },
+  { label: '1小时', value: 1 },
+  { label: '6小时', value: 6 },
+  { label: '12小时', value: 12 },
+  { label: '1天', value: 24 },
 ]
 
 const hours = ref(24)
@@ -75,6 +75,17 @@ watch(hours, load)
 
 function toggleTask(id: number) {
   visibility.value[id] = !visibility.value[id]
+}
+
+const isAllHidden = computed(() => {
+  return pingTasks.value.every(t => visibility.value[t.id] === false)
+})
+
+function toggleAllTasks() {
+  const nextVal = isAllHidden.value
+  for (const t of pingTasks.value) {
+    visibility.value[t.id] = nextVal
+  }
 }
 
 // ── Chart geometry ──────────────────────────────────────────
@@ -322,95 +333,80 @@ function onMouseMove(e: MouseEvent) {
 function onMouseLeave() {
   tooltip.value = null
 }
-</script>
 
-<template>
-  <!-- 中文说明：网络延迟区域改为直接贴合详情版面，去掉外层卡片和多余内边距。 -->
+function getAreaPath(s: TaskSeries): string {
+  if (!s.points || !s.points.length) return ''
+  const first = s.points[0]
+  const last = s.points[s.points.length - 1]
+  const bottomY = PAD_T + H
+  const pointsStr = s.points.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' L ')
+  return `M ${first.x.toFixed(1)},${bottomY.toFixed(1)} L ${pointsStr} L ${last.x.toFixed(1)},${bottomY.toFixed(1)} Z`
+}
+</script><template>
   <div>
     <div class="flex flex-col gap-5">
-      <div class="flex flex-col gap-4 border-b border-[var(--theme-divider-soft)] pb-4">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <h3 class="font-body-zh text-subheading text-[var(--theme-text-primary)]">网络延迟</h3>
-
-          <div class="flex flex-wrap items-center justify-end gap-2">
-            <!-- 中文说明：平滑开关改成更轻的工具条按钮，减少与主内容的视觉竞争。 -->
-            <button
-              type="button"
-              class="inline-flex h-9 items-center gap-2 rounded-[0.85rem] border border-[var(--theme-divider)] bg-[var(--theme-surface-panel-subtle)] px-3 text-[var(--theme-text-secondary)] transition-colors duration-200 hover:text-[var(--theme-text-primary)]"
-              :class="smoothEnabled ? 'border-[var(--theme-accent-clay-primary)] bg-[var(--theme-accent-soft)] text-[var(--theme-text-primary)]' : ''"
-              @click="smoothEnabled = !smoothEnabled"
-            >
-              <span class="font-body-zh text-caption">平滑</span>
-              <span
-                class="relative h-4 w-7 rounded-[999px] transition-colors"
-                :class="smoothEnabled ? 'bg-[var(--theme-accent-soft-strong)]' : 'bg-[var(--theme-divider)]'"
-              >
-                <span
-                  class="absolute top-0.5 left-0.5 h-3 w-3 rounded-full bg-current shadow transition-transform"
-                  :class="smoothEnabled ? 'translate-x-3 text-[var(--theme-accent-clay-primary)]' : 'translate-x-0 text-[var(--theme-text-secondary)]'"
-                />
-              </span>
-            </button>
-
-            <!-- 中文说明：时间维度改成独立分段控件，和图表工具按钮保持统一高度与边框语言。 -->
-            <div class="flex h-9 items-center gap-1 rounded-[0.85rem] border border-[var(--theme-divider)] bg-[var(--theme-surface-panel-subtle)] p-1">
-              <button
-                v-for="opt in HOUR_OPTIONS"
-                :key="opt.value"
-                type="button"
-                class="inline-flex h-7 min-w-[2.75rem] items-center justify-center rounded-[0.65rem] px-2.5 font-heading-en text-caption transition-colors duration-200"
-                :class="hours === opt.value
-                  ? 'bg-[var(--theme-control-active-surface)] text-[var(--theme-text-primary)] shadow-[var(--theme-control-active-shadow)]'
-                  : 'text-[var(--theme-text-secondary)] hover:text-[var(--theme-text-primary)]'"
-                @click="hours = opt.value"
-              >
-                {{ opt.label }}
-              </button>
-            </div>
-          </div>
+      <!-- Centered time selector -->
+      <div class="flex justify-center">
+        <div class="flex h-9 items-center gap-1 rounded-[0.85rem] border border-[var(--theme-divider-subtle)] bg-[var(--theme-surface-panel-subtle)] p-1">
+          <button
+            v-for="opt in HOUR_OPTIONS"
+            :key="opt.value"
+            type="button"
+            class="inline-flex h-7 min-w-[3.5rem] items-center justify-center rounded-[0.65rem] px-3.5 font-body-zh text-caption transition-colors duration-200"
+            :class="hours === opt.value
+              ? 'bg-[var(--theme-control-active-surface)] text-[var(--theme-text-primary)] shadow-[var(--theme-control-active-shadow)] font-semibold'
+              : 'text-[var(--theme-text-secondary)] hover:text-[var(--theme-text-primary)]'"
+            @click="hours = opt.value"
+          >
+            {{ opt.label }}
+          </button>
         </div>
       </div>
 
-      <!-- 中文说明：移动端图例改成两列栅格，减少单列堆叠带来的纵向浪费。 -->
-      <div class="grid grid-cols-2 gap-3 md:flex md:flex-wrap">
+      <!-- Ping task cards (legends) in a wrapping flex container -->
+      <div class="flex flex-wrap gap-3">
         <div
           v-for="s in series"
           :key="s.task.id"
-          class="group/info relative min-w-0"
+          class="group/info relative min-w-0 w-full sm:w-[265px]"
         >
           <button
             type="button"
-            class="flex w-full min-w-0 flex-col gap-1 rounded-[1rem] border border-[var(--theme-divider-soft)] bg-[var(--theme-surface-panel-subtle)] px-3 py-2 text-left transition-all duration-200 md:min-w-[12rem] md:w-auto"
-            :class="s.visible
-              ? 'opacity-100'
-              : 'border-[var(--theme-divider-subtle)] opacity-45'"
+            class="flex w-full min-w-0 flex-col rounded-[1rem] border border-[var(--theme-divider-subtle)] bg-[var(--theme-surface-panel-subtle)] p-3 text-left transition-all duration-200 hover:border-[var(--theme-divider-soft)] hover:shadow-[0_4px_12px_rgba(20,20,19,0.02)]"
+            :class="[
+              s.visible ? 'opacity-100' : 'opacity-45'
+            ]"
             @click="toggleTask(s.task.id)"
           >
-            <div class="flex items-center gap-2">
-              <span class="inline-block h-2.5 w-1 shrink-0 rounded-full" :style="{ background: s.color }" />
+            <!-- Top row: vertical color pill, name, info icon -->
+            <div class="flex w-full items-center justify-between gap-2">
+              <div class="flex min-w-0 items-center gap-2">
+                <span class="inline-block h-3.5 w-1 shrink-0 rounded-full" :style="{ backgroundColor: s.color }" />
+                <span
+                  class="font-ui-mixed min-w-0 truncate text-ui text-[var(--theme-text-primary)] font-semibold"
+                  :class="!s.visible ? 'line-through opacity-50' : ''"
+                >
+                  {{ s.task.name }}
+                </span>
+              </div>
               <span
-                class="font-ui-mixed min-w-0 flex-1 truncate text-subheading text-[var(--theme-text-primary)]"
-                :class="!s.visible ? 'line-through' : ''"
-              >
-                {{ s.task.name }}
-              </span>
-              <span
-                class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[var(--theme-text-tertiary)] transition-colors duration-200 group-hover/info:text-[var(--theme-text-primary)]"
+                class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[var(--theme-text-tertiary)] transition-colors duration-200 hover:text-[var(--theme-text-primary)]"
                 :aria-label="`查看 ${s.task.name} 统计信息`"
               >
-                <CircleAlert class="h-4 w-4" />
+                <Info class="h-4 w-4" />
               </span>
             </div>
 
-            <div class="flex flex-wrap items-center gap-x-3 gap-y-1 pl-3 font-ui-mixed text-caption text-[var(--theme-text-secondary)]">
-              <span class="font-heading-en text-[var(--theme-text-primary)]">{{ s.avg.toFixed(1) }} ms</span>
+            <!-- Bottom row: stats indented to align under name -->
+            <div class="mt-1.5 flex flex-wrap items-center gap-x-3.5 gap-y-0.5 pl-3 font-ui-mixed text-caption text-[var(--theme-text-secondary)]">
+              <span class="font-heading-en text-[var(--theme-text-primary)] font-semibold">{{ s.avg.toFixed(1) }} ms</span>
               <span>丢包 {{ s.loss.toFixed(1) }}%</span>
               <span>波动 {{ s.volatility.toFixed(2) }}</span>
             </div>
           </button>
 
           <div
-            class="pointer-events-none absolute top-full right-0 z-20 mt-2 w-[18rem] rounded-[1.25rem] border border-[var(--theme-divider)] bg-[var(--tooltip-surface)] p-4 opacity-0 shadow-[var(--surface-elevated-shadow)] transition-opacity duration-200 group-hover/info:opacity-100"
+            class="pointer-events-none absolute top-full right-0 z-20 mt-2 w-[18rem] rounded-[1.25rem] border border-[var(--theme-divider-subtle)] bg-[var(--tooltip-surface)] p-4 opacity-0 shadow-[var(--surface-elevated-shadow)] transition-opacity duration-200 group-hover/info:opacity-100"
           >
             <div class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
               <span class="font-body-zh text-caption text-[var(--theme-text-tertiary)]">最小值</span>
@@ -474,6 +470,22 @@ function onMouseLeave() {
           @mousemove="onMouseMove"
           @mouseleave="onMouseLeave"
         >
+          <!-- Defs for Gradient Fills -->
+          <defs>
+            <linearGradient
+              v-for="s in series"
+              :key="`grad-${s.task.id}`"
+              :id="`grad-${s.task.id}`"
+              x1="0"
+              y1="0"
+              x2="0"
+              y2="1"
+            >
+              <stop offset="0%" :stop-color="s.color" stop-opacity="0.18" />
+              <stop offset="100%" :stop-color="s.color" stop-opacity="0.0" />
+            </linearGradient>
+          </defs>
+
           <!-- 参考线 + Y 标签 -->
           <g v-for="lbl in yLabels" :key="lbl.y">
             <line
@@ -489,17 +501,29 @@ function onMouseLeave() {
             v-for="lbl in xLabels" :key="lbl.x"
             :x="lbl.x" :y="CHART_H - 6"
             :text-anchor="lbl.anchor" font-size="11" :fill="'var(--chart-axis)'"
+            class="font-heading-en"
           >{{ lbl.label }}</text>
+
+          <!-- 填充面积图 -->
+          <path
+            v-for="s in series"
+            :key="`area-${s.task.id}`"
+            v-show="s.visible"
+            :d="getAreaPath(s)"
+            :fill="`url(#grad-${s.task.id})`"
+            class="transition-opacity duration-200"
+          />
 
           <!-- 折线 -->
           <polyline
             v-for="s in series" :key="s.task.id"
             :points="s.polyline"
             :stroke="s.color"
-            :stroke-width="s.visible ? 1.25 : 0"
+            :stroke-width="s.visible ? 1.5 : 0"
             fill="none"
             stroke-linejoin="round"
             stroke-linecap="round"
+            class="transition-all duration-200"
           />
 
           <!-- 竖线 crosshair -->
@@ -514,12 +538,12 @@ function onMouseLeave() {
           />
         </svg>
 
-        <!-- 中文说明：Y 轴标签改为 HTML 浮层，压在线条之上，既不占绘图区宽度也不会被遮挡。 -->
+        <!-- Y 轴标签 -->
         <div class="pointer-events-none absolute inset-y-0 left-0 z-10 w-14">
           <div
             v-for="lbl in yLabels"
             :key="`axis-${lbl.y}`"
-            class="absolute left-0 rounded-sm bg-[color-mix(in_srgb,var(--theme-surface-page)_92%,transparent)] px-2 py-0.5 font-heading-en text-[14px] leading-none text-[var(--chart-axis)]"
+            class="absolute left-0 rounded-sm bg-[color-mix(in_srgb,var(--theme-surface-page)_92%,transparent)] px-2 py-0.5 font-heading-en text-[13px] leading-none text-[var(--chart-axis)]"
             :style="{ top: `${lbl.topPx - 8}px` }"
           >
             {{ lbl.label }}
@@ -538,10 +562,35 @@ function onMouseLeave() {
           <div v-for="item in tooltip.items" :key="item.name" class="flex items-center gap-1.5 text-sm">
             <span class="inline-block h-2 w-2 shrink-0 rounded-full" :style="{ background: item.color }" />
             <span class="font-ui-mixed text-caption text-[var(--theme-text-secondary)]">{{ item.name }}</span>
-            <span class="ml-auto pl-3 font-heading-en text-caption tabular-nums text-[var(--theme-text-primary)]">{{ item.value.toFixed(1) }} ms</span>
+            <span class="ml-auto pl-3 font-heading-en text-caption tabular-nums text-[var(--theme-text-primary)] font-semibold">{{ item.value.toFixed(1) }} ms</span>
           </div>
         </div>
       </div>
+
+      <!-- Bottom Controls (Smooth switch and hide all) -->
+      <div class="flex items-center justify-between bg-[var(--theme-surface-panel-subtle)] p-3 rounded-xl border border-[var(--theme-divider-subtle)] text-[12px] font-body-zh text-[var(--theme-text-secondary)]">
+        <!-- Smooth Switch -->
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 transition-colors duration-200 hover:text-[var(--theme-text-primary)]"
+          @click="smoothEnabled = !smoothEnabled"
+        >
+          <span class="relative h-4.5 w-8 rounded-[999px] transition-colors" :class="smoothEnabled ? 'bg-emerald-500' : 'bg-[var(--theme-divider-soft)]'">
+            <span class="absolute top-0.5 left-0.5 h-3.5 w-3.5 rounded-full bg-white shadow transition-transform" :class="smoothEnabled ? 'translate-x-3.5' : 'translate-x-0'" />
+          </span>
+          <span>平滑</span>
+        </button>
+
+        <!-- Hide all -->
+        <button
+          type="button"
+          class="inline-flex items-center gap-1.5 transition-colors duration-200 hover:text-[var(--theme-text-primary)] font-medium"
+          @click="toggleAllTasks"
+        >
+          <span>{{ isAllHidden ? '显示全部' : '隐藏全部' }}</span>
+        </button>
+      </div>
+
     </div>
   </div>
 </template>

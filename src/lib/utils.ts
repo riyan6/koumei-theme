@@ -113,3 +113,15 @@ export function getFlagUrl(region: string): string {
 
   return `/assets/flags/${regionCode}.svg`
 }
+
+export function cleanNodeName(name: string): string {
+  if (!name) return ''
+  const uuidRegex = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi
+  let cleaned = name.replace(uuidRegex, '')
+  cleaned = cleaned
+    .replace(/\(\s*\)|\[\s*\]|（\s*）/g, '') // empty parens
+    .replace(/\s*[\(\[（\-#:\s]*$/, '') // trailing separators
+    .replace(/^[\(\[（\-#:\s]*/, '') // leading separators
+    .trim()
+  return cleaned || name
+}

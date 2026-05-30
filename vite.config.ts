@@ -7,7 +7,7 @@ import tailwindcss from '@tailwindcss/vite'
 const defaultProxyTarget = 'http://localhost:8080'
 
 // 中文说明：根据模式读取 .env 文件，让本地调试目标可配置，但不把目标域名打进客户端产物。
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ command, mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const komariProxyTarget = env.KOMARI_PROXY_TARGET || defaultProxyTarget
   const useSecureProxy = komariProxyTarget.startsWith('https://')
@@ -27,10 +27,16 @@ export default defineConfig(({ mode }) => {
     },
   }
 
+  // 中文说明：开发环境使用根路径 '/'，避免路由跳转警告；生产环境打包使用指定的基准路径。
+  const base = command === 'serve' && mode === 'development' ? '/' : '/themes/Koumei/dist/'
+
   // https://vite.dev/config/
   return {
     plugins: [vue(), tailwindcss()],
-    base: '/themes/Koumei/dist/',
+    base,
+    define: {
+      __KOMARI_PROXY_TARGET__: JSON.stringify(komariProxyTarget),
+    },
     resolve: {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),

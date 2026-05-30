@@ -33,6 +33,7 @@ const {
   initializeData,
   disposeRealtime,
   setGroup,
+  isLoading,
 } = useNodes()
 
 // 中文说明：列表页保持分组过滤，详情页则直接基于全量节点查找，避免刷新后因过滤条件找不到节点。
@@ -86,10 +87,10 @@ onUnmounted(() => {
     >
       <!-- 中文说明：导航内容使用统一容器宽度，确保不会超过 1440px。 -->
       <div class="site-container">
-        <div class="flex h-[82px] items-center justify-between gap-4">
+        <div class="flex h-16 items-center justify-between gap-4">
           <a
             href="/"
-            class="inline-flex items-center gap-3 font-heading-en text-h3 text-foreground transition-opacity duration-200 hover:opacity-70"
+            class="inline-flex items-center gap-3 font-heading-en text-h2 text-foreground transition-opacity duration-200 hover:opacity-70"
             @click.prevent="goToHome"
           >
             <!-- 中文说明：导航品牌位优先使用 public 下的 logo.svg，和标题文本一起作为统一入口。 -->
@@ -115,56 +116,62 @@ onUnmounted(() => {
               aria-label="主导航"
               class="hidden md:block"
             >
-              <ul class="text-ui flex items-center justify-end gap-x-6 text-foreground">
-                <li>
-                  <span class="font-body-zh text-[var(--theme-text-secondary)]">服务器数量</span>
-                  <span class="font-body-en ml-2 text-[var(--theme-text-primary)]">{{ totalCount }}</span>
+              <ul class="text-[12px] flex items-center justify-end gap-x-4 text-foreground font-body-zh">
+                <li class="flex items-center gap-1.5">
+                  <span class="text-[var(--theme-text-secondary)]">服务器数量</span>
+                  <span class="font-ui-mixed font-semibold text-[13px] text-[var(--theme-accent-clay-primary)]">{{ totalCount }}</span>
                 </li>
-                <li>
-                  <span class="font-body-zh text-[var(--theme-text-secondary)]">在线数量</span>
-                  <span class="font-body-en ml-2 text-[var(--theme-text-primary)]">{{ onlineCount }}</span>
+                <li class="h-3 w-px bg-[var(--theme-divider-soft)]" />
+                <li class="flex items-center gap-1.5">
+                  <span class="text-[var(--theme-text-secondary)]">在线数量</span>
+                  <span class="font-ui-mixed font-semibold text-[13px] text-[var(--theme-accent-clay-primary)]">{{ onlineCount }}</span>
                 </li>
-                <li>
-                  <span class="font-body-zh text-[var(--theme-text-secondary)]">流量概览</span>
-                  <span class="font-body-en ml-2 text-[var(--theme-text-primary)]">
-                    ↑ {{ formatBytes(totalTraffic.up, 1) }} ↓ {{ formatBytes(totalTraffic.down, 1) }}
+                <li class="h-3 w-px bg-[var(--theme-divider-soft)]" />
+                <li class="flex items-center gap-1.5">
+                  <span class="text-[var(--theme-text-secondary)]">流量概览</span>
+                  <span class="font-ui-mixed font-semibold text-[13px] text-[var(--theme-text-primary)] tabular-nums">
+                    <span class="text-[var(--theme-accent-clay-primary)] mr-0.5 font-bold">↑</span>{{ formatBytes(totalTraffic.up, 1) }}
+                    <span class="mx-1 text-[var(--theme-divider-subtle)]">/</span>
+                    <span class="text-[var(--theme-accent-clay-primary)] mr-0.5 font-bold">↓</span>{{ formatBytes(totalTraffic.down, 1) }}
                   </span>
                 </li>
-                <li class="group/theme relative pb-3 -mb-3">
+                <li class="h-3 w-px bg-[var(--theme-divider-soft)]" />
+                <li class="group/theme relative pb-3 -mb-3 flex items-center">
                   <button
                     type="button"
-                    class="font-body-zh inline-flex items-center gap-1.5 text-[var(--theme-text-primary)] transition-opacity duration-200 hover:opacity-70"
+                    class="inline-flex items-center gap-1 text-[var(--theme-text-primary)] transition-opacity duration-200 hover:opacity-70 font-medium"
                     aria-label="模式菜单"
                   >
                     <span>模式</span>
-                    <ChevronDown class="h-4 w-4" />
+                    <ChevronDown class="h-3.5 w-3.5" />
                   </button>
 
                   <div
-                    class="pointer-events-none absolute top-full right-0 z-30 min-w-[13rem] pt-2 opacity-0 transition-opacity duration-150 group-hover/theme:pointer-events-auto group-hover/theme:opacity-100 group-focus-within/theme:pointer-events-auto group-focus-within/theme:opacity-100"
+                    class="pointer-events-none absolute top-full right-0 z-30 min-w-[11rem] pt-2 opacity-0 transition-opacity duration-150 group-hover/theme:pointer-events-auto group-hover/theme:opacity-100 group-focus-within/theme:pointer-events-auto group-focus-within/theme:opacity-100"
                   >
-                    <div class="rounded-[1.5rem] border border-[var(--theme-divider)] bg-[var(--theme-surface-overlay)] p-3 shadow-[var(--surface-elevated-shadow)]">
+                    <div class="rounded-[1.25rem] border border-[var(--theme-divider-subtle)] bg-[var(--theme-surface-overlay)] p-2 shadow-[var(--surface-elevated-shadow)]">
                       <button
                         v-for="option in themeOptions"
                         :key="option.mode"
                         type="button"
-                        class="flex w-full items-center justify-between rounded-[1rem] px-4 py-3 text-left transition-colors duration-200 hover:bg-[var(--theme-surface-panel-muted)]"
+                        class="flex w-full items-center justify-between rounded-[0.85rem] px-3.5 py-2.5 text-left transition-colors duration-200 hover:bg-[var(--theme-surface-panel-muted)]"
                         @click="setThemeMode(option.mode)"
                       >
-                        <span class="font-body-zh text-ui text-[var(--theme-text-primary)]">{{ option.label }}</span>
+                        <span class="text-[12px] text-[var(--theme-text-primary)]">{{ option.label }}</span>
                         <Check
                           v-if="themeMode === option.mode"
-                          class="h-4 w-4 text-[var(--theme-text-primary)]"
+                          class="h-3.5 w-3.5 text-[var(--theme-text-primary)]"
                         />
                       </button>
                     </div>
                   </div>
                 </li>
+                <li class="h-3 w-px bg-[var(--theme-divider-soft)]" />
                 <li>
                   <!-- 中文说明：管理按钮增加轻微缩放动效，悬停时更有反馈，移开后平滑恢复。 -->
                   <a
                     href="/admin"
-                    class="font-body-zh inline-flex min-h-10 items-center justify-center rounded-[0.9rem] bg-[var(--theme-button-primary-bg)] px-5 py-2 text-[var(--theme-button-primary-fg)] transition-[transform,opacity] duration-200 ease-out hover:scale-[1.03] hover:opacity-90"
+                    class="font-body-zh inline-flex min-h-9 items-center justify-center rounded-[0.85rem] bg-[var(--theme-button-primary-bg)] px-4.5 py-1.5 text-[12px] text-[var(--theme-button-primary-fg)] transition-[transform,opacity] duration-200 ease-out hover:scale-[1.03] hover:opacity-90"
                   >
                     管理
                   </a>
@@ -176,9 +183,9 @@ onUnmounted(() => {
       </div>
     </header>
 
-    <main class="site-container pt-[82px]">
+    <main class="site-container pt-16">
       <!-- 中文说明：主体区域先实现分组切换和服务器卡片，后续再继续丰富节点信息。 -->
-      <section class="flex min-h-[calc(100vh-82px)] flex-col gap-8 py-10">
+      <section class="flex min-h-[calc(100vh-4rem)] flex-col gap-8 py-10">
         <Transition name="toolbar-switch">
           <div
             v-if="!activeNodeUuid"
@@ -227,7 +234,7 @@ onUnmounted(() => {
             <div class="text-ui flex items-center gap-3 text-[var(--theme-text-secondary)]">
               <span class="font-body-zh">网络速率</span>
               <span class="font-body-en text-[var(--theme-text-primary)]">
-                ↑ {{ formatSpeed(totalSpeed.up) }} ↓ {{ formatSpeed(totalSpeed.down) }}
+                <span class="text-[var(--theme-accent-clay-primary)] font-bold">↑</span> {{ formatSpeed(totalSpeed.up) }} <span class="text-[var(--theme-accent-clay-primary)] font-bold">↓</span> {{ formatSpeed(totalSpeed.down) }}
               </span>
             </div>
           </div>
@@ -267,6 +274,39 @@ onUnmounted(() => {
         </div>
       </div>
     </footer>
+
+    <!-- Premium Loading Overlay -->
+    <Transition name="loading-fade">
+      <div
+        v-if="isLoading"
+        class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-background"
+      >
+        <div class="flex flex-col items-center gap-6 text-center">
+          <!-- Koumei Logo with pulse and rotating spinner container -->
+          <div class="relative flex h-20 w-20 items-center justify-center">
+            <!-- Glow background effect -->
+            <div class="absolute inset-0 animate-ping rounded-full bg-[var(--theme-accent-clay-primary)] opacity-10"></div>
+            <!-- Outer spinning gradient border -->
+            <div class="absolute inset-0 rounded-full border-2 border-t-[var(--theme-accent-clay-primary)] border-r-transparent border-b-transparent border-l-transparent animate-spin"></div>
+            
+            <img
+              src="/logo.svg"
+              alt="Loading logo"
+              class="h-10 w-10 animate-pulse"
+            >
+          </div>
+          <div class="flex flex-col items-center gap-2">
+            <h3 class="font-heading-en text-lg text-foreground font-semibold animate-pulse">
+              Koumei Monitor
+            </h3>
+            <p class="font-body-zh text-sm text-[var(--theme-text-secondary)] flex items-center gap-2 justify-center">
+              <span class="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              正在连接服务器并拉取节点数据...
+            </p>
+          </div>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -295,5 +335,15 @@ onUnmounted(() => {
   opacity: 1;
   transform: translateY(0);
   margin-bottom: 0;
+}
+
+.loading-fade-enter-active,
+.loading-fade-leave-active {
+  transition: opacity 300ms ease;
+}
+
+.loading-fade-enter-from,
+.loading-fade-leave-to {
+  opacity: 0;
 }
 </style>
